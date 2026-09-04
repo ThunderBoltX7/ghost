@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ghost-ai-cli"  # Ensure this name is available on PyPI
+version = "0.1.0"
+description = "A terminal-based AI coding assistant."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+    { name = "Mayank Ojha" }
+]
+dependencies = [
+    "openai>=1.0.0",
+    "rich>=13.0.0"
+]
+
+[project.scripts]
+ghost = "ghost_cli.main:run_agent"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ghost_cli"]
