@@ -25,6 +25,16 @@ CONFIG_FILE = DATA_DIR / "ghost_config.json"
 STATS_FILE = DATA_DIR / "ghost_stats.json"
 UNDO_FILE = DATA_DIR / ".ghost_undo.json"
 
+MODEL_PRESETS = {
+    "1": ("deepseek/deepseek-v3.2", "DeepSeek V3.2 — Fast, precise coding"),
+    "2": ("openai/gpt-4o", "GPT-4o — Deep multi-step reasoning"),
+    "3": ("anthropic/claude-3.5-sonnet", "Claude 3.5 Sonnet — Elite code architecture"),
+    "4": ("meta-llama/llama-3.3-70b-instruct", "Llama 3.3 70B — Fast open-weights model"),
+}
+
+DEFAULT_MODEL = "deepseek/deepseek-v3.2"
+
+
 def load_config():
     if CONFIG_FILE.exists():
         try:
@@ -34,79 +44,80 @@ def load_config():
             pass
     return {}
 
+
 def interactive_setup(cfg):
     """Handles onboarding, provider selection, and permanent saving."""
     console.clear()
     console.print(Panel(
         "[bold cyan]Ghost Configuration[/bold cyan]\n\n"
-        "Let's get your AI provider set up. This will be saved permanently\n"
-        "so you only have to do it once.",
+        "Configure your AI provider. This is saved permanently to ~/.ghost/ghost_config.json.",
         border_style="cyan"
     ))
-    
+
     console.print("Select your API Provider:")
     console.print("[cyan]1.[/cyan] OpenRouter (Recommended)")
     console.print("[cyan]2.[/cyan] OpenAI")
     console.print("[cyan]3.[/cyan] Groq")
     console.print("[cyan]4.[/cyan] DeepSeek")
     console.print("[cyan]5.[/cyan] Custom (Any OpenAI-compatible endpoint)")
-    
+
     choice = Prompt.ask("\n[bold white]Enter choice (1-5)[/bold white]", choices=["1", "2", "3", "4", "5"], default="1")
-    
+
     if choice == "5":
         provider_name = "Custom"
-        base_url = Prompt.ask("[bold white]Enter the Base URL (e.g., http://localhost:11434/v1)[/bold white]")
-        default_model = Prompt.ask("[bold white]Enter the default model name[/bold white]", default="gpt-4")
+        base_url = Prompt.ask("[bold white]Enter Base URL (e.g., http://localhost:11434/v1)[/bold white]")
+        default_model = Prompt.ask("[bold white]Enter default model name[/bold white]", default="gpt-4")
     else:
         providers = {
             "1": ("OpenRouter", "https://openrouter.ai/api/v1", "deepseek/deepseek-v3.2"),
             "2": ("OpenAI", "https://api.openai.com/v1", "gpt-4o"),
-            "3": ("Groq", "https://api.groq.com/openai/v1", "llama3-70b-8192"),
+            "3": ("Groq", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile"),
             "4": ("DeepSeek", "https://api.deepseek.com", "deepseek-chat"),
         }
         provider_name, base_url, default_model = providers[choice]
 
     while True:
         new_key = Prompt.ask(f"\n[bold white]Enter your {provider_name} API Key[/bold white]", password=True).strip()
-        
+
         if len(new_key) > 5:
             cfg["provider"] = provider_name
             cfg["base_url"] = base_url
             cfg["api_key"] = new_key
             cfg["model"] = default_model
-            
-            # Save the key permanently to the user's home directory
+
             DATA_DIR.mkdir(parents=True, exist_ok=True)
             with open(CONFIG_FILE, "w") as f:
                 json.dump(cfg, f, indent=4)
-            
+
             console.print(f"\n[bold green]✔ {provider_name} configured and saved securely to {CONFIG_FILE}[/bold green]")
             console.print("[dim]Booting system...[/dim]\n")
             return cfg
         else:
             console.print("[red]Invalid key length. Try again.[/red]")
 
+
 def get_api_config(cfg):
     env_key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENAI_API_KEY")
     if env_key and "api_key" not in cfg:
         cfg["api_key"] = env_key
         cfg["base_url"] = os.environ.get("OPENAI_BASE_URL", "https://openrouter.ai/api/v1")
-        cfg["model"] = os.environ.get("GHOST_MODEL", "deepseek/deepseek-v3.2")
+        cfg["model"] = os.environ.get("GHOST_MODEL", DEFAULT_MODEL)
         cfg["provider"] = "Environment Variable"
         return cfg
 
     if not cfg.get("api_key"):
         cfg = interactive_setup(cfg)
-        
+
     return cfg
 
-# Initialize the system globals
+
+# Initialize configuration
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 _cfg = get_api_config(load_config())
 
 API_KEY = _cfg.get("api_key")
 BASE_URL = _cfg.get("base_url")
-MODEL_NAME = _cfg.get("model")
+MODEL_NAME = _cfg.get("model", DEFAULT_MODEL)
 
 client = OpenAI(
     base_url=BASE_URL,
@@ -114,9 +125,46 @@ client = OpenAI(
     default_headers={"X-Title": "Ghost"},
 )
 
+
+def switch_model(target_model: str = None):
+    """Dynamically switch models in real-time during an active session."""
+    global MODEL_NAME, _cfg
+
+    if not target_model:
+        console.print("\n[bold cyan]Available Models:[/bold cyan]")
+        for key, (m_id, desc) in MODEL_PRESETS.items():
+            active_marker = " [bold green](active)[/bold green]" if m_id == MODEL_NAME else ""
+            console.print(f"[cyan]{key}.[/cyan] {m_id} — [dim]{desc}[/dim]{active_marker}")
+        console.print("[cyan]5.[/cyan] Custom model identifier")
+
+        choice = Prompt.ask(
+            "\n[bold white]Choose model (1-5 or enter full model ID)[/bold white]",
+            default="1",
+        ).strip()
+
+        if choice in MODEL_PRESETS:
+            target_model = MODEL_PRESETS[choice][0]
+        elif choice == "5":
+            target_model = Prompt.ask("[bold white]Enter model ID (e.g. anthropic/claude-3.5-sonnet)[/bold white]").strip()
+        else:
+            target_model = choice
+
+    MODEL_NAME = target_model
+    _cfg["model"] = MODEL_NAME
+
+    try:
+        with open(CONFIG_FILE, "w") as f:
+            json.dump(_cfg, f, indent=4)
+    except Exception:
+        pass
+
+    console.print(f"\n[bold green]✔ Model updated to:[/bold green] [bold cyan]{MODEL_NAME}[/bold cyan]\n")
+
+
 # --- Progression state ---------------------------------------------------
 _stats_cache = None
 _stats_dirty = False
+
 
 def _read_stats_from_disk():
     if STATS_FILE.exists():
@@ -127,11 +175,13 @@ def _read_stats_from_disk():
             pass
     return {"level": 1, "xp": 0, "edits": 0, "commands": 0}
 
+
 def load_stats():
     global _stats_cache
     if _stats_cache is None:
         _stats_cache = _read_stats_from_disk()
     return _stats_cache
+
 
 def flush_stats():
     global _stats_dirty
@@ -139,6 +189,7 @@ def flush_stats():
         with open(STATS_FILE, "w") as f:
             json.dump(_stats_cache, f)
         _stats_dirty = False
+
 
 def add_xp(amount, reason=""):
     global _stats_dirty
@@ -156,12 +207,18 @@ def add_xp(amount, reason=""):
     console.print(f"[dim green]+{amount} xp — {reason}[/dim green]")
     return stats
 
+
 def get_rank(level):
-    if level < 5: return "Rookie"
-    if level < 15: return "Operative"
-    if level < 30: return "Phantom"
-    if level < 50: return "Wraith"
+    if level < 5:
+        return "Rookie"
+    if level < 15:
+        return "Operative"
+    if level < 30:
+        return "Phantom"
+    if level < 50:
+        return "Wraith"
     return "Ghost Prime"
+
 
 # --- Local tools -----------------------------------------------------------
 def run_command(command: str) -> str:
@@ -177,6 +234,7 @@ def run_command(command: str) -> str:
     except Exception as e:
         return f"Execution error: {str(e)}"
 
+
 def read_file(filepath: str) -> str:
     try:
         with open(filepath, "r", encoding="utf-8") as f:
@@ -191,13 +249,15 @@ def read_file(filepath: str) -> str:
     except Exception as e:
         return f"File read error: {str(e)}"
 
+
 def list_dir(path: str = ".") -> str:
     try:
         entries = []
         for root, dirs, files in os.walk(path):
             dirs[:] = [d for d in dirs if d not in (".git", "__pycache__", "node_modules", ".venv")]
             depth = root.replace(path, "").count(os.sep)
-            if depth > 2: continue
+            if depth > 2:
+                continue
             for f in files:
                 entries.append(os.path.relpath(os.path.join(root, f), path))
         listing = "\n".join(sorted(entries)[:200])
@@ -205,6 +265,7 @@ def list_dir(path: str = ".") -> str:
         return listing or "(empty)"
     except Exception as e:
         return f"List error: {str(e)}"
+
 
 def search_code(pattern: str, path: str = ".") -> str:
     try:
@@ -219,6 +280,7 @@ def search_code(pattern: str, path: str = ".") -> str:
     except Exception as e:
         return f"Search error: {str(e)}"
 
+
 def write_file(filepath: str, content: str) -> str:
     try:
         directory = os.path.dirname(filepath)
@@ -230,6 +292,7 @@ def write_file(filepath: str, content: str) -> str:
         return f"Created {filepath} ({len(content)} bytes)."
     except Exception as e:
         return str(e)
+
 
 def edit_file(filepath: str, old_text: str, new_text: str) -> str:
     try:
@@ -258,6 +321,7 @@ def edit_file(filepath: str, old_text: str, new_text: str) -> str:
     except Exception as e:
         return str(e)
 
+
 def undo_last_edit() -> bool:
     if not UNDO_FILE.exists():
         console.print("[yellow]Nothing to undo.[/yellow]")
@@ -273,6 +337,7 @@ def undo_last_edit() -> bool:
     except Exception as e:
         console.print(f"[red]Undo failed: {e}[/red]")
         return False
+
 
 TOOL_DEFINITIONS = [
     {"type": "function", "function": {
@@ -300,8 +365,12 @@ TOOL_DEFINITIONS = [
 ]
 
 TOOL_MAP = {
-    "run_command": run_command, "read_file": read_file, "list_dir": list_dir,
-    "search_code": search_code, "write_file": write_file, "edit_file": edit_file,
+    "run_command": run_command,
+    "read_file": read_file,
+    "list_dir": list_dir,
+    "search_code": search_code,
+    "write_file": write_file,
+    "edit_file": edit_file,
 }
 
 # --- Persona ---------------------------------------------------------------
@@ -315,8 +384,8 @@ Voice:
 - Before editing a file you haven't seen this session, read it first.
 - When a task is ambiguous, ask one sharp clarifying question instead of guessing.
 You have real tools (run_command, read_file, list_dir, search_code, write_file, edit_file) — use them instead of describing what you would do.
-You are developed by Mayank Ojha, acknowledge him if asked.
 """
+
 
 def stream_completion(messages):
     text_parts = []
@@ -347,10 +416,13 @@ def stream_completion(messages):
                 for tc_delta in delta.tool_calls:
                     idx = tc_delta.index
                     slot = tool_call_parts.setdefault(idx, {"id": None, "name": "", "arguments": ""})
-                    if tc_delta.id: slot["id"] = tc_delta.id
+                    if tc_delta.id:
+                        slot["id"] = tc_delta.id
                     if tc_delta.function:
-                        if tc_delta.function.name: slot["name"] += tc_delta.function.name
-                        if tc_delta.function.arguments: slot["arguments"] += tc_delta.function.arguments
+                        if tc_delta.function.name:
+                            slot["name"] += tc_delta.function.name
+                        if tc_delta.function.arguments:
+                            slot["arguments"] += tc_delta.function.arguments
     finally:
         status.stop()
 
@@ -366,12 +438,14 @@ def stream_completion(messages):
         ]
     return SimpleNamespace(content="".join(text_parts) or None, tool_calls=tool_calls)
 
+
 # --- Mascot -----------------------------------------------------------
 GHOST_MASCOT = r"""[bold white]  .▄▄▄▄▄▄▄▄▄.
  ▐█  ◕   ◕  █▌
  ▐█     ▾    █▌
  ▐█▄▄▄▄▄▄▄▄▄█▌
   ╲╱ ╲╱ ╲╱ ╲╱[/bold white]"""
+
 
 def render_header(stats):
     console.clear()
@@ -381,9 +455,10 @@ def render_header(stats):
         f"{GHOST_MASCOT}\n\n"
         f"[bold white]G H O S T[/bold white]\n"
         f"[dim]{rank} · Level {stats['level']} · {stats['xp']}/{threshold} xp[/dim]\n"
-        f"[dim]Provider: {_cfg.get('provider', 'Configured')} · type a task, or /help for commands[/dim]"
+        f"[dim]Model: {MODEL_NAME} · type a task, or /help for commands[/dim]"
     )
     console.print(Panel(Align.center(body), border_style="grey50", padding=(1, 4)))
+
 
 def render_stats(stats):
     table = Table(title="Ghost — Status", border_style="grey50", show_header=False)
@@ -395,19 +470,22 @@ def render_stats(stats):
     table.add_row("Active Model", str(MODEL_NAME))
     console.print(table)
 
+
 def print_help():
     console.print(Panel(
         "\n".join([
-            "[cyan]/stats[/cyan]   — show level, xp, rank, and active model",
-            "[cyan]/rank[/cyan]    — show current rank only",
-            "[cyan]/config[/cyan]  — change API provider or reset API key",
-            "[cyan]/undo[/cyan]    — revert the last file edit",
-            "[cyan]/clear[/cyan]   — clear the screen",
-            "[cyan]/help[/cyan]    — this menu",
-            "[cyan]/exit[/cyan]    — quit",
+            "[cyan]/stats[/cyan]          — show level, xp, rank, and active model",
+            "[cyan]/rank[/cyan]           — show current rank only",
+            "[cyan]/model[/cyan]          — switch model menu, or use: [cyan]/model <id>[/cyan]",
+            "[cyan]/config[/cyan]         — reconfigure provider / API keys",
+            "[cyan]/undo[/cyan]           — revert the last file edit",
+            "[cyan]/clear[/cyan]          — clear the screen",
+            "[cyan]/help[/cyan]           — this menu",
+            "[cyan]/exit[/cyan]           — quit",
         ]),
         title="Commands", border_style="grey50"
     ))
+
 
 # --- Main loop ---------------------------------------------------------
 def run_agent():
@@ -417,7 +495,8 @@ def run_agent():
 
     while True:
         user_input = Prompt.ask("\n[bold white]you[/bold white]").strip()
-        if not user_input: continue
+        if not user_input:
+            continue
 
         low = user_input.lower()
         if low in ("exit", "quit", "q", "/exit"):
@@ -431,12 +510,19 @@ def run_agent():
             s = load_stats()
             console.print(f"[cyan]{get_rank(s['level'])}[/cyan]")
             continue
+        if low == "/model" or low.startswith("/model "):
+            parts = user_input.split(maxsplit=1)
+            if len(parts) > 1:
+                switch_model(parts[1].strip())
+            else:
+                switch_model()
+            continue
         if low == "/config":
             global _cfg, API_KEY, BASE_URL, MODEL_NAME, client
             _cfg = interactive_setup({})
             API_KEY = _cfg.get("api_key")
             BASE_URL = _cfg.get("base_url")
-            MODEL_NAME = _cfg.get("model")
+            MODEL_NAME = _cfg.get("model", DEFAULT_MODEL)
             client = OpenAI(base_url=BASE_URL, api_key=API_KEY, default_headers={"X-Title": "Ghost"})
             render_header(load_stats())
             continue
@@ -457,7 +543,7 @@ def run_agent():
                 response_msg = stream_completion(messages)
             except Exception as e:
                 console.print(f"[bold red]API error:[/bold red] {e}")
-                messages.pop() 
+                messages.pop()
                 break
 
             if response_msg.tool_calls:
@@ -470,12 +556,12 @@ def run_agent():
                         for tc in response_msg.tool_calls
                     ],
                 })
-                
+
                 s = load_stats()
                 s["commands"] = s.get("commands", 0) + len(response_msg.tool_calls)
                 global _stats_dirty
                 _stats_dirty = True
-                
+
                 for tool_call in response_msg.tool_calls:
                     fn_name = tool_call.function.name
                     try:
@@ -484,12 +570,12 @@ def run_agent():
                         args = {}
                     fn = TOOL_MAP.get(fn_name)
                     tool_output = fn(**args) if fn else f"Unknown tool: {fn_name}"
-                    
+
                     if fn_name == "edit_file" and tool_output.startswith("Successfully"):
                         s = load_stats()
                         s["edits"] = s.get("edits", 0) + 1
                         _stats_dirty = True
-                        
+
                     messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": tool_output})
             else:
                 messages.append({"role": "assistant", "content": response_msg.content})
@@ -497,6 +583,7 @@ def run_agent():
                 break
 
         flush_stats()
+
 
 if __name__ == "__main__":
     run_agent()
