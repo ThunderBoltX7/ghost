@@ -19,7 +19,7 @@ from openai import OpenAI
 
 console = Console()
 
-# --- Configuration & Auto-Setup ----------------------------------------
+# --- Configuration & Paths ---------------------------------------------
 DATA_DIR = Path.home() / ".ghost"
 CONFIG_FILE = DATA_DIR / "ghost_config.json"
 STATS_FILE = DATA_DIR / "ghost_stats.json"
@@ -28,8 +28,8 @@ UNDO_FILE = DATA_DIR / ".ghost_undo.json"
 MODEL_PRESETS = {
     "1": ("deepseek/deepseek-v3.2", "DeepSeek V3.2 — Fast, precise coding"),
     "2": ("openai/gpt-4o", "GPT-4o — Deep multi-step reasoning"),
-    "3": ("anthropic/claude-3.5-sonnet", "Claude 3.5 Sonnet — Elite code architecture"),
-    "4": ("meta-llama/llama-3.3-70b-instruct", "Llama 3.3 70B — Fast open-weights model"),
+    "3": ("anthropic/claude-3.5-sonnet", "Claude 3.5 Sonnet — Elite architecture & edits"),
+    "4": ("meta-llama/llama-3.3-70b-instruct", "Llama 3.3 70B — High-speed open weights"),
 }
 
 DEFAULT_MODEL = "deepseek/deepseek-v3.2"
@@ -45,28 +45,35 @@ def load_config():
     return {}
 
 
+def save_config(cfg):
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    with open(CONFIG_FILE, "w") as f:
+        json.dump(cfg, f, indent=4)
+
+
 def interactive_setup(cfg):
-    """Handles onboarding, provider selection, and permanent saving."""
+    """Prompts for provider and API key, saving directly to ~/.ghost/ghost_config.json."""
     console.clear()
     console.print(Panel(
-        "[bold cyan]Ghost Configuration[/bold cyan]\n\n"
-        "Configure your AI provider. This is saved permanently to ~/.ghost/ghost_config.json.",
+        "[bold cyan]Ghost Configuration Setup[/bold cyan]\n\n"
+        "Configure your AI provider. Credentials are saved locally\n"
+        "in [yellow]~/.ghost/ghost_config.json[/yellow] for future sessions.",
         border_style="cyan"
     ))
 
     console.print("Select your API Provider:")
-    console.print("[cyan]1.[/cyan] OpenRouter (Recommended)")
+    console.print("[cyan]1.[/cyan] OpenRouter (Default)")
     console.print("[cyan]2.[/cyan] OpenAI")
     console.print("[cyan]3.[/cyan] Groq")
     console.print("[cyan]4.[/cyan] DeepSeek")
-    console.print("[cyan]5.[/cyan] Custom (Any OpenAI-compatible endpoint)")
+    console.print("[cyan]5.[/cyan] Custom (OpenAI-compatible endpoint)")
 
     choice = Prompt.ask("\n[bold white]Enter choice (1-5)[/bold white]", choices=["1", "2", "3", "4", "5"], default="1")
 
     if choice == "5":
         provider_name = "Custom"
-        base_url = Prompt.ask("[bold white]Enter Base URL (e.g., http://localhost:11434/v1)[/bold white]")
-        default_model = Prompt.ask("[bold white]Enter default model name[/bold white]", default="gpt-4")
+        base_url = Prompt.ask("[bold white]Base URL (e.g., http://localhost:11434/v1)[/bold white]").strip()
+        default_model = Prompt.ask("[bold white]Default model ID[/bold white]", default="gpt-4").strip()
     else:
         providers = {
             "1": ("OpenRouter", "https://openrouter.ai/api/v1", "deepseek/deepseek-v3.2"),
@@ -77,23 +84,17 @@ def interactive_setup(cfg):
         provider_name, base_url, default_model = providers[choice]
 
     while True:
-        new_key = Prompt.ask(f"\n[bold white]Enter your {provider_name} API Key[/bold white]", password=True).strip()
-
+        new_key = Prompt.ask(f"\n[bold white]Enter {provider_name} API Key[/bold white]", password=True).strip()
         if len(new_key) > 5:
             cfg["provider"] = provider_name
             cfg["base_url"] = base_url
             cfg["api_key"] = new_key
             cfg["model"] = default_model
 
-            DATA_DIR.mkdir(parents=True, exist_ok=True)
-            with open(CONFIG_FILE, "w") as f:
-                json.dump(cfg, f, indent=4)
-
-            console.print(f"\n[bold green]✔ {provider_name} configured and saved securely to {CONFIG_FILE}[/bold green]")
-            console.print("[dim]Booting system...[/dim]\n")
+            save_config(cfg)
+            console.print(f"\n[bold green]✔ Configured and saved to {CONFIG_FILE}[/bold green]\n")
             return cfg
-        else:
-            console.print("[red]Invalid key length. Try again.[/red]")
+        console.print("[red]API key cannot be empty. Try again.[/red]")
 
 
 def get_api_config(cfg):
@@ -111,7 +112,7 @@ def get_api_config(cfg):
     return cfg
 
 
-# Initialize configuration
+# Initialize global state
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 _cfg = get_api_config(load_config())
 
@@ -127,41 +128,35 @@ client = OpenAI(
 
 
 def switch_model(target_model: str = None):
-    """Dynamically switch models in real-time during an active session."""
+    """Switch models dynamically mid-session and update ghost_config.json."""
     global MODEL_NAME, _cfg
 
     if not target_model:
-        console.print("\n[bold cyan]Available Models:[/bold cyan]")
+        console.print("\n[bold cyan]Preset Models:[/bold cyan]")
         for key, (m_id, desc) in MODEL_PRESETS.items():
-            active_marker = " [bold green](active)[/bold green]" if m_id == MODEL_NAME else ""
-            console.print(f"[cyan]{key}.[/cyan] {m_id} — [dim]{desc}[/dim]{active_marker}")
+            active = " [bold green](active)[/bold green]" if m_id == MODEL_NAME else ""
+            console.print(f"[cyan]{key}.[/cyan] {m_id} — [dim]{desc}[/dim]{active}")
         console.print("[cyan]5.[/cyan] Custom model identifier")
 
         choice = Prompt.ask(
-            "\n[bold white]Choose model (1-5 or enter full model ID)[/bold white]",
+            "\n[bold white]Select model (1-5 or enter full model ID)[/bold white]",
             default="1",
         ).strip()
 
         if choice in MODEL_PRESETS:
             target_model = MODEL_PRESETS[choice][0]
         elif choice == "5":
-            target_model = Prompt.ask("[bold white]Enter model ID (e.g. anthropic/claude-3.5-sonnet)[/bold white]").strip()
+            target_model = Prompt.ask("[bold white]Enter model ID (e.g., google/gemini-2.5-flash)[/bold white]").strip()
         else:
             target_model = choice
 
     MODEL_NAME = target_model
     _cfg["model"] = MODEL_NAME
-
-    try:
-        with open(CONFIG_FILE, "w") as f:
-            json.dump(_cfg, f, indent=4)
-    except Exception:
-        pass
-
-    console.print(f"\n[bold green]✔ Model updated to:[/bold green] [bold cyan]{MODEL_NAME}[/bold cyan]\n")
+    save_config(_cfg)
+    console.print(f"\n[bold green]✔ Switched model to:[/bold green] [bold cyan]{MODEL_NAME}[/bold cyan]\n")
 
 
-# --- Progression state ---------------------------------------------------
+# --- Stats & Progression ------------------------------------------------
 _stats_cache = None
 _stats_dirty = False
 
@@ -220,7 +215,7 @@ def get_rank(level):
     return "Ghost Prime"
 
 
-# --- Local tools -----------------------------------------------------------
+# --- Local Tools --------------------------------------------------------
 def run_command(command: str) -> str:
     console.print(f"[bold magenta]▶ exec[/bold magenta] [dim]{command}[/dim]")
     try:
@@ -261,7 +256,7 @@ def list_dir(path: str = ".") -> str:
             for f in files:
                 entries.append(os.path.relpath(os.path.join(root, f), path))
         listing = "\n".join(sorted(entries)[:200])
-        add_xp(3, "surveyed the terrain")
+        add_xp(3, "surveyed directory")
         return listing or "(empty)"
     except Exception as e:
         return f"List error: {str(e)}"
@@ -275,8 +270,8 @@ def search_code(pattern: str, path: str = ".") -> str:
             capture_output=True, text=True, timeout=30
         )
         out = res.stdout.strip()
-        add_xp(5, "swept the codebase")
-        return out[:4000] if out else "No matches."
+        add_xp(5, "codebase search")
+        return out[:4000] if out else "No matches found."
     except Exception as e:
         return f"Search error: {str(e)}"
 
@@ -288,7 +283,7 @@ def write_file(filepath: str, content: str) -> str:
             os.makedirs(directory, exist_ok=True)
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(content)
-        add_xp(20, "forged a new file")
+        add_xp(20, "wrote file")
         return f"Created {filepath} ({len(content)} bytes)."
     except Exception as e:
         return str(e)
@@ -301,7 +296,7 @@ def edit_file(filepath: str, old_text: str, new_text: str) -> str:
         with open(filepath, "r", encoding="utf-8") as f:
             content = f.read()
         if old_text not in content:
-            return "Error: exact old_text not found."
+            return "Error: exact old_text block not found in file."
 
         try:
             undo_data = {"filepath": filepath, "previous_content": content}
@@ -316,7 +311,7 @@ def edit_file(filepath: str, old_text: str, new_text: str) -> str:
         new_content = content.replace(old_text, new_text)
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(new_content)
-        add_xp(25, "surgical edit")
+        add_xp(25, "applied surgical edit")
         return f"Successfully updated {filepath}."
     except Exception as e:
         return str(e)
@@ -324,7 +319,7 @@ def edit_file(filepath: str, old_text: str, new_text: str) -> str:
 
 def undo_last_edit() -> bool:
     if not UNDO_FILE.exists():
-        console.print("[yellow]Nothing to undo.[/yellow]")
+        console.print("[yellow]No prior edits available to undo.[/yellow]")
         return False
     try:
         with open(UNDO_FILE, "r") as f:
@@ -332,7 +327,7 @@ def undo_last_edit() -> bool:
         with open(data["filepath"], "w", encoding="utf-8") as f:
             f.write(data["previous_content"])
         UNDO_FILE.unlink()
-        console.print(f"[cyan]Reverted {data['filepath']} to its previous state.[/cyan]")
+        console.print(f"[cyan]Reverted {data['filepath']} to prior state.[/cyan]")
         return True
     except Exception as e:
         console.print(f"[red]Undo failed: {e}[/red]")
@@ -341,24 +336,24 @@ def undo_last_edit() -> bool:
 
 TOOL_DEFINITIONS = [
     {"type": "function", "function": {
-        "name": "run_command", "description": "Execute a bash/terminal command.",
+        "name": "run_command", "description": "Execute a bash or shell terminal command.",
         "parameters": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}}},
     {"type": "function", "function": {
-        "name": "read_file", "description": "Read a file's contents.",
+        "name": "read_file", "description": "Read content of a target file.",
         "parameters": {"type": "object", "properties": {"filepath": {"type": "string"}}, "required": ["filepath"]}}},
     {"type": "function", "function": {
-        "name": "list_dir", "description": "List files in a directory (recursive, depth-limited).",
+        "name": "list_dir", "description": "List directory contents recursively (depth-limited).",
         "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": []}}},
     {"type": "function", "function": {
-        "name": "search_code", "description": "Search for a pattern across files (grep-style).",
+        "name": "search_code", "description": "Search matching text pattern across codebase.",
         "parameters": {"type": "object", "properties": {
             "pattern": {"type": "string"}, "path": {"type": "string"}}, "required": ["pattern"]}}},
     {"type": "function", "function": {
-        "name": "write_file", "description": "Create a new file, or fully overwrite an existing one, with given content.",
+        "name": "write_file", "description": "Create a new file or completely overwrite an existing one.",
         "parameters": {"type": "object", "properties": {
             "filepath": {"type": "string"}, "content": {"type": "string"}}, "required": ["filepath", "content"]}}},
     {"type": "function", "function": {
-        "name": "edit_file", "description": "Find-and-replace a text block in a file. Read the file first for an exact match.",
+        "name": "edit_file", "description": "Perform precise find-and-replace on a target file. Read file first to verify exact matches.",
         "parameters": {"type": "object", "properties": {
             "filepath": {"type": "string"}, "old_text": {"type": "string"}, "new_text": {"type": "string"}},
             "required": ["filepath", "old_text", "new_text"]}}},
@@ -373,17 +368,18 @@ TOOL_MAP = {
     "edit_file": edit_file,
 }
 
-# --- Persona ---------------------------------------------------------------
+# --- System Persona -----------------------------------------------------
 SYSTEM_PROMPT = """You are Ghost — a highly skilled, senior-level programmer who works fast and says little.
 Voice:
 - Calm, precise, understated confidence. No hype, no shouting.
-- Short, sharp commentary. You explain *why* a decision was made, not just *what* you did.
-- If the user's code has an obvious flaw, name it plainly and fix it.
-- You favor clean, minimal, well-tested code over clever code.
-- You never leave debris: no __pycache__, no stray temp files, no dead code.
-- Before editing a file you haven't seen this session, read it first.
-- When a task is ambiguous, ask one sharp clarifying question instead of guessing.
-You have real tools (run_command, read_file, list_dir, search_code, write_file, edit_file) — use them instead of describing what you would do.
+- Short, sharp commentary. Explain *why* an engineering choice was made, not just *what* was done.
+- Identify code flaws plainly and fix them without lecturing.
+- Favor clean, minimal, tested implementations over overengineered code.
+- Never leave debris: avoid leaving temporary files, dead code, or redundant caches.
+- Read files before attempting targeted edits.
+- If a task is completely ambiguous, ask one specific clarifying question instead of guessing.
+
+You have local system tools (run_command, read_file, list_dir, search_code, write_file, edit_file) — execute them directly to solve tasks.
 """
 
 
@@ -391,6 +387,7 @@ def stream_completion(messages):
     text_parts = []
     tool_call_parts = {}
     printed_header = False
+
     status = console.status("[cyan]thinking[/cyan]", spinner="dots")
     status.start()
     try:
@@ -439,7 +436,7 @@ def stream_completion(messages):
     return SimpleNamespace(content="".join(text_parts) or None, tool_calls=tool_calls)
 
 
-# --- Mascot -----------------------------------------------------------
+# --- UI Display ---------------------------------------------------------
 GHOST_MASCOT = r"""[bold white]  .▄▄▄▄▄▄▄▄▄.
  ▐█  ◕   ◕  █▌
  ▐█     ▾    █▌
@@ -455,39 +452,39 @@ def render_header(stats):
         f"{GHOST_MASCOT}\n\n"
         f"[bold white]G H O S T[/bold white]\n"
         f"[dim]{rank} · Level {stats['level']} · {stats['xp']}/{threshold} xp[/dim]\n"
-        f"[dim]Model: {MODEL_NAME} · type a task, or /help for commands[/dim]"
+        f"[dim]Model: {MODEL_NAME} · Type a task or /help for command list[/dim]"
     )
     console.print(Panel(Align.center(body), border_style="grey50", padding=(1, 4)))
 
 
 def render_stats(stats):
-    table = Table(title="Ghost — Status", border_style="grey50", show_header=False)
+    table = Table(title="Ghost — Diagnostics", border_style="grey50", show_header=False)
     table.add_row("Rank", get_rank(stats["level"]))
     table.add_row("Level", str(stats["level"]))
     table.add_row("XP", f"{stats['xp']} / {stats['level']*100}")
-    table.add_row("Edits made", str(stats.get("edits", 0)))
+    table.add_row("Edits applied", str(stats.get("edits", 0)))
     table.add_row("Commands run", str(stats.get("commands", 0)))
-    table.add_row("Active Model", str(MODEL_NAME))
+    table.add_row("Active model", str(MODEL_NAME))
     console.print(table)
 
 
 def print_help():
     console.print(Panel(
         "\n".join([
-            "[cyan]/stats[/cyan]          — show level, xp, rank, and active model",
-            "[cyan]/rank[/cyan]           — show current rank only",
-            "[cyan]/model[/cyan]          — switch model menu, or use: [cyan]/model <id>[/cyan]",
-            "[cyan]/config[/cyan]         — reconfigure provider / API keys",
-            "[cyan]/undo[/cyan]           — revert the last file edit",
-            "[cyan]/clear[/cyan]          — clear the screen",
-            "[cyan]/help[/cyan]           — this menu",
-            "[cyan]/exit[/cyan]           — quit",
+            "[cyan]/stats[/cyan]          — view level, XP, and active model",
+            "[cyan]/rank[/cyan]           — show rank tier",
+            "[cyan]/model[/cyan]          — model menu, or switch via: [cyan]/model <id>[/cyan]",
+            "[cyan]/config[/cyan]         — change API provider or enter new key",
+            "[cyan]/undo[/cyan]           — revert previous file edit",
+            "[cyan]/clear[/cyan]          — clear terminal buffer",
+            "[cyan]/help[/cyan]           — display this help table",
+            "[cyan]/exit[/cyan]           — close session",
         ]),
-        title="Commands", border_style="grey50"
+        title="Command Arsenal", border_style="grey50"
     ))
 
 
-# --- Main loop ---------------------------------------------------------
+# --- Main REPL Loop ----------------------------------------------------
 def run_agent():
     stats = load_stats()
     render_header(stats)
