@@ -28,7 +28,7 @@ UNDO_FILE = DATA_DIR / ".ghost_undo.json"
 MODEL_PRESETS = {
     "1": ("deepseek/deepseek-v3.2", "DeepSeek V3.2 — Fast, precise coding"),
     "2": ("openai/gpt-4o", "GPT-4o — Deep multi-step reasoning"),
-    "3": ("anthropic/claude-3.5-sonnet", "Claude 3.5 Sonnet — Elite architecture & edits"),
+    "3": ("nvidia/nemotron-3.5-lightning:free", "Nemotron 3.5 pro — Relieable and prescice coding"),
     "4": ("meta-llama/llama-3.3-70b-instruct", "Llama 3.3 70B — High-speed open weights"),
 }
 
