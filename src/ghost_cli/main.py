@@ -5,7 +5,7 @@ Single-file version of the Ghost CLI v2. This preserves the original modular
 behavior while keeping the entire application in one entrypoint.
 """
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 
 import difflib
 import json
@@ -41,8 +41,9 @@ CACHE_FILE = DATA_DIR / "ghost_cache.json"
 MODEL_PRESETS = {
     "1": ("deepseek/deepseek-v3.2", "DeepSeek V3.2 — Fast, precise coding"),
     "2": ("openai/gpt-4o", "GPT-4o — Deep multi-step reasoning"),
-    "3": ("nvidia/nemotron-3.5-lightning:free", "Nemotron 3.5 Lightning — Fast, efficient coding"),
-    "4": ("meta-llama/llama-3.3-70b-instruct", "Llama 3.3 70B — Fast open-weights model"),
+    "3": ("deepseek-ai/deepseek-v4-pro-0813", "DeepSeek V4 Pro — NVIDIA NIM"),
+    "4": ("nvidia/nemotron-3.5-lightning:free", "Nemotron 3.5 Lightning — Free NIM"),
+    "5": ("meta-llama/llama-3.3-70b-instruct", "Llama 3.3 70B — Fast open-weights model"),
 }
 
 DEFAULT_MODEL = "deepseek/deepseek-v3.2"
@@ -90,20 +91,22 @@ def interactive_setup(cfg):
     console.print("[cyan]2.[/cyan] OpenAI")
     console.print("[cyan]3.[/cyan] Groq")
     console.print("[cyan]4.[/cyan] DeepSeek")
-    console.print("[cyan]5.[/cyan] Custom (Any OpenAI-compatible endpoint)")
+    console.print("[cyan]5.[/cyan] NVIDIA NIM")
+    console.print("[cyan]6.[/cyan] Custom (Any OpenAI-compatible endpoint)")
 
-    choice = Prompt.ask("\n[bold white]Enter choice (1-5)[/bold white]", choices=["1", "2", "3", "4", "5"], default="1")
+    choice = Prompt.ask("\n[bold white]Enter choice (1-6)[/bold white]", choices=["1", "2", "3", "4", "5", "6"], default="1")
 
-    if choice == "5":
+    if choice == "6":
         provider_name = "Custom"
-        base_url = Prompt.ask("[bold white]Enter Base URL (e.g., http://localhost:11434/v1)[/bold white]")
-        default_model = Prompt.ask("[bold white]Enter default model name[/bold white]", default="gpt-4")
+        base_url = Prompt.ask("[bold white]Enter Base URL (e.g., http://localhost:11434/v1)[/bold white]").strip()
+        default_model = Prompt.ask("[bold white]Enter default model name[/bold white]", default="gpt-4").strip()
     else:
         providers = {
             "1": ("OpenRouter", "https://openrouter.ai/api/v1", "deepseek/deepseek-v3.2"),
             "2": ("OpenAI", "https://api.openai.com/v1", "gpt-4o"),
             "3": ("Groq", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile"),
             "4": ("DeepSeek", "https://api.deepseek.com", "deepseek-chat"),
+            "5": ("NVIDIA", "https://integrate.api.nvidia.com/v1", "deepseek-ai/deepseek-v4-pro-0813"),
         }
         provider_name, base_url, default_model = providers[choice]
 
@@ -128,12 +131,23 @@ def interactive_setup(cfg):
 
 
 def get_api_config(cfg):
-    env_key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    env_key = (
+        os.environ.get("OPENROUTER_API_KEY")
+        or os.environ.get("OPENAI_API_KEY")
+        or os.environ.get("NVIDIA_API_KEY")
+        or os.environ.get("DEEPSEEK_API_KEY")
+        or os.environ.get("GROQ_API_KEY")
+    )
     if env_key and "api_key" not in cfg:
         cfg["api_key"] = env_key
-        cfg["base_url"] = os.environ.get("OPENAI_BASE_URL", "https://openrouter.ai/api/v1")
-        cfg["model"] = os.environ.get("GHOST_MODEL", DEFAULT_MODEL)
-        cfg["provider"] = "Environment Variable"
+        if os.environ.get("NVIDIA_API_KEY") and not os.environ.get("OPENROUTER_API_KEY") and not os.environ.get("OPENAI_API_KEY"):
+            cfg["base_url"] = "https://integrate.api.nvidia.com/v1"
+            cfg["model"] = "deepseek-ai/deepseek-v4-pro-0813"
+            cfg["provider"] = "NVIDIA NIM"
+        else:
+            cfg["base_url"] = os.environ.get("OPENAI_BASE_URL", "https://openrouter.ai/api/v1")
+            cfg["model"] = os.environ.get("GHOST_MODEL", DEFAULT_MODEL)
+            cfg["provider"] = "Environment Variable"
 
     if not cfg.get("api_key"):
         cfg = interactive_setup(cfg)
@@ -671,11 +685,15 @@ def _risk_tag(risk: str) -> str:
 
 
 def _ask(risk: str) -> bool:
-    if risk == RISK_CRITICAL:
-        ans = Prompt.ask("[bold red]Type 'yes' to proceed, anything else cancels[/bold red]", default="no")
-        return ans.strip().lower() == "yes"
-    ans = Prompt.ask("Proceed? [y/N]", default="n")
-    return ans.strip().lower() in ("y", "yes")
+    try:
+        if risk == RISK_CRITICAL:
+            ans = Prompt.ask("[bold red]Type 'yes' to proceed, anything else cancels[/bold red]", default="no")
+            return ans.strip().lower() == "yes"
+        ans = Prompt.ask("Proceed? [y/N]", default="n")
+        return ans.strip().lower() in ("y", "yes")
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Action cancelled by user.[/yellow]")
+        return False
 
 
 def prompt_confirm(description: str, risk: str) -> bool:
@@ -712,6 +730,8 @@ def run_command(command: str) -> str:
         return output.strip() if output else "Command executed successfully."
     except subprocess.TimeoutExpired:
         return "Execution error: command timed out after 60s."
+    except KeyboardInterrupt:
+        return "Execution error: command interrupted by user (SIGINT)."
     except Exception as e:
         return f"Execution error: {str(e)}"
 
@@ -774,6 +794,8 @@ def search_code(pattern: str, path: str = ".") -> str:
         return "Search error: neither ripgrep nor grep is available on this system."
     except subprocess.TimeoutExpired:
         return "Search error: search timed out."
+    except KeyboardInterrupt:
+        return "Search error: search cancelled by user."
     except Exception as e:
         return f"Search error: {str(e)}"
 
@@ -858,7 +880,8 @@ def render_header(stats, model_name):
         f"{GHOST_MASCOT}\n\n"
         f"[bold white]G H O S T[/bold white]\n"
         f"[dim]{rank} · Level {stats['level']} · {stats['xp']}/{threshold} xp[/dim]\n"
-        f"[dim]Model: {model_name} · type a task, or /help for commands[/dim]"
+        f"[dim]Model: {model_name} · type a task, or /help for commands[/dim]\n"
+        f"[dim italic](Press Ctrl+C to halt AI responses cleanly)[/dim italic]"
     )
     console.print(Panel(Align.center(body), border_style="grey50", padding=(1, 4)))
 
@@ -908,6 +931,7 @@ def print_help():
                     "[cyan]/clear[/cyan]              — clear the screen",
                     "[cyan]/help[/cyan]               — this menu",
                     "[cyan]/exit[/cyan]               — quit",
+                    "[dim]Tip: Press Ctrl+C at any time to interrupt streaming responses.[/dim]",
                 ]
             ),
             title="Commands",
@@ -975,6 +999,8 @@ def _run_one(lang, cmd, root, timeout):
         return {"lang": lang, "cmd": cmd, "success": False, "output": f"{cmd[0]} not found on PATH."}
     except subprocess.TimeoutExpired:
         return {"lang": lang, "cmd": cmd, "success": False, "output": f"Test run timed out after {timeout}s."}
+    except KeyboardInterrupt:
+        return {"lang": lang, "cmd": cmd, "success": False, "output": "Test run interrupted by user."}
     except Exception as e:
         return {"lang": lang, "cmd": cmd, "success": False, "output": f"Error running tests: {e}"}
 
@@ -1044,16 +1070,16 @@ class ClientHolder:
             for key, (m_id, desc) in MODEL_PRESETS.items():
                 active_marker = " [bold green](active)[/bold green]" if m_id == self.model_name else ""
                 console.print(f"[cyan]{key}.[/cyan] {m_id} — [dim]{desc}[/dim]{active_marker}")
-            console.print("[cyan]5.[/cyan] Custom model identifier")
+            console.print("[cyan]6.[/cyan] Custom model identifier")
 
             choice = Prompt.ask(
-                "\n[bold white]Choose model (1-5 or enter full model ID)[/bold white]",
+                "\n[bold white]Choose model (1-6 or enter full model ID)[/bold white]",
                 default="1",
             ).strip()
 
             if choice in MODEL_PRESETS:
                 target_model = MODEL_PRESETS[choice][0]
-            elif choice == "5":
+            elif choice == "6":
                 target_model = Prompt.ask("[bold white]Enter model ID (e.g. anthropic/claude-3.5-sonnet)[/bold white]").strip()
             else:
                 target_model = choice
@@ -1230,6 +1256,8 @@ def dispatch_tool_call(tool_call, planning_restricted=False, edited=None):
         result = fn(**args)
     except TypeError as e:
         return f"Tool '{fn_name}' called with bad arguments: {e}"
+    except KeyboardInterrupt:
+        raise
     except Exception as e:
         return f"Tool '{fn_name}' raised an error: {e}"
 
@@ -1250,6 +1278,15 @@ def stream_completion(messages, tool_definitions):
     printed_header = False
     status = console.status("[cyan]thinking[/cyan]", spinner="dots")
     status.start()
+
+    # Pass NVIDIA-specific parameters when connecting to integrate.api.nvidia.com
+    extra_params = {}
+    base_url = str(HOLDER.cfg.get("base_url", "")).lower()
+    if "nvidia.com" in base_url:
+        extra_params["extra_body"] = {"chat_template_kwargs": {"thinking": False}}
+        extra_params["temperature"] = 1
+        extra_params["top_p"] = 0.95
+
     try:
         stream = HOLDER.client.chat.completions.create(
             model=HOLDER.model_name,
@@ -1257,6 +1294,7 @@ def stream_completion(messages, tool_definitions):
             tools=tool_definitions,
             tool_choice="auto",
             stream=True,
+            **extra_params,
         )
         for chunk in stream:
             delta = chunk.choices[0].delta
@@ -1283,6 +1321,10 @@ def stream_completion(messages, tool_definitions):
                             slot["name"] += tc_delta.function.name
                         if tc_delta.function.arguments:
                             slot["arguments"] += tc_delta.function.arguments
+    except KeyboardInterrupt:
+        status.stop()
+        console.print()
+        raise
     finally:
         status.stop()
 
@@ -1304,8 +1346,14 @@ def run_turn(messages, tool_definitions, planning_restricted=False, edited=None)
     while True:
         try:
             response_msg = stream_completion(messages, tool_definitions)
+        except KeyboardInterrupt:
+            console.print("\n[yellow]▲ Generation halted by user (Ctrl+C).[/yellow]")
+            return False
         except Exception as e:
             console.print(f"[bold red]API error:[/bold red] {e}")
+            return False
+
+        if response_msg is None:
             return False
 
         if response_msg.tool_calls:
@@ -1319,7 +1367,13 @@ def run_turn(messages, tool_definitions, planning_restricted=False, edited=None)
                 ],
             })
             for tool_call in response_msg.tool_calls:
-                tool_output = dispatch_tool_call(tool_call, planning_restricted, edited)
+                try:
+                    tool_output = dispatch_tool_call(tool_call, planning_restricted, edited)
+                except KeyboardInterrupt:
+                    console.print("\n[yellow]▲ Tool execution cancelled by user (Ctrl+C).[/yellow]")
+                    messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": "Tool execution interrupted by user (Ctrl+C)."})
+                    return False
+
                 messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_output)})
         else:
             messages.append({"role": "assistant", "content": response_msg.content})
@@ -1341,37 +1395,40 @@ def trim_messages(messages):
 
 def run_test_fix_loop(messages, initial_result=None, max_retries=3):
     result = initial_result
-    for attempt in range(1, max_retries + 1):
-        if result is None:
-            console.print(f"[dim]Re-running tests (attempt {attempt}/{max_retries})...[/dim]")
-            result = run_tests(".")
-        if not result["ran"]:
-            console.print(f"[dim]{result['output']}[/dim]")
-            return
-        if result["success"]:
-            console.print(f"[bold green]✔ Tests passing[/bold green] (attempt {attempt}/{max_retries}).")
-            add_xp(20, "green build")
-            return
-        console.print(f"[yellow]✖ Tests failing — attempt {attempt}/{max_retries}[/yellow]")
-        console.print(format_results(result))
-        if attempt == max_retries:
-            console.print("[red]Max retries reached. Leaving for manual review.[/red]")
-            return
-        failing = [r for r in result["results"] if not r["success"]]
-        failure_text = "\n\n".join(f"[{r['lang']}] {' '.join(r['cmd'])}\n{r['output']}" for r in failing)
-        messages.append({
-            "role": "user",
-            "content": (
-                "The test suite is failing:\n\n" + failure_text[:4000] +
-                "\n\nAnalyze the failure and fix the code using your tools. "
-                "Make the fix directly; keep commentary short."
-            ),
-        })
-        ok = run_turn(messages, TOOL_DEFINITIONS)
-        if not ok:
-            console.print("[red]Fix attempt aborted due to an API error.[/red]")
-            return
-        result = None
+    try:
+        for attempt in range(1, max_retries + 1):
+            if result is None:
+                console.print(f"[dim]Re-running tests (attempt {attempt}/{max_retries})...[/dim]")
+                result = run_tests(".")
+            if not result["ran"]:
+                console.print(f"[dim]{result['output']}[/dim]")
+                return
+            if result["success"]:
+                console.print(f"[bold green]✔ Tests passing[/bold green] (attempt {attempt}/{max_retries}).")
+                add_xp(20, "green build")
+                return
+            console.print(f"[yellow]✖ Tests failing — attempt {attempt}/{max_retries}[/yellow]")
+            console.print(format_results(result))
+            if attempt == max_retries:
+                console.print("[red]Max retries reached. Leaving for manual review.[/red]")
+                return
+            failing = [r for r in result["results"] if not r["success"]]
+            failure_text = "\n\n".join(f"[{r['lang']}] {' '.join(r['cmd'])}\n{r['output']}" for r in failing)
+            messages.append({
+                "role": "user",
+                "content": (
+                    "The test suite is failing:\n\n" + failure_text[:4000] +
+                    "\n\nAnalyze the failure and fix the code using your tools. "
+                    "Make the fix directly; keep commentary short."
+                ),
+            })
+            ok = run_turn(messages, TOOL_DEFINITIONS)
+            if not ok:
+                console.print("[red]Fix attempt aborted.[/red]")
+                return
+            result = None
+    except KeyboardInterrupt:
+        console.print("\n[yellow]▲ Test-fix loop cancelled by user (Ctrl+C).[/yellow]")
 
 
 def maybe_autotest(messages, edited):
@@ -1386,9 +1443,12 @@ def maybe_autotest(messages, edited):
     if result["success"]:
         add_xp(20, "clean test run")
         return
-    ans = Prompt.ask("[yellow]Tests are failing. Attempt an automatic fix loop (up to 3 tries)? [y/N][/yellow]", default="n")
-    if ans.strip().lower() in ("y", "yes"):
-        run_test_fix_loop(messages, initial_result=result)
+    try:
+        ans = Prompt.ask("[yellow]Tests are failing. Attempt an automatic fix loop (up to 3 tries)? [y/N][/yellow]", default="n")
+        if ans.strip().lower() in ("y", "yes"):
+            run_test_fix_loop(messages, initial_result=result)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Auto-fix cancelled.[/yellow]")
 
 
 def _print_scan(result, cached):
@@ -1587,11 +1647,25 @@ def run_agent():
 
     while True:
         messages = trim_messages(messages)
-        user_input = Prompt.ask("\n[bold white]you[/bold white]").strip()
+        try:
+            user_input = Prompt.ask("\n[bold white]you[/bold white]").strip()
+        except KeyboardInterrupt:
+            console.print("\n[dim](Press Ctrl+D or type /exit to quit)[/dim]")
+            continue
+        except EOFError:
+            flush_stats()
+            console.print("\n[dim]Ghost fades out.[/dim]")
+            break
+
         if not user_input:
             continue
 
-        result = handle_slash_command(user_input, messages)
+        try:
+            result = handle_slash_command(user_input, messages)
+        except KeyboardInterrupt:
+            console.print("\n[yellow]▲ Command halted by user (Ctrl+C).[/yellow]")
+            continue
+
         if result == "exit":
             break
         if result:
@@ -1603,6 +1677,7 @@ def run_agent():
         edited = []
         ok = run_turn(messages, TOOL_DEFINITIONS, edited=edited)
         if not ok:
+            # Cleanly pop the interrupted or failed turn so messages stay aligned
             del messages[pre_len:]
         else:
             maybe_autotest(messages, edited)
