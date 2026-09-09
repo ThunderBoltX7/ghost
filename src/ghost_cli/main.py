@@ -5,7 +5,7 @@ Single-file version of the Ghost CLI v2. This preserves the original modular
 behavior while keeping the entire application in one entrypoint.
 """
 
-__version__ = "2.1.0"
+__version__ = "2.1.1"
 
 import difflib
 import json
@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -49,6 +50,7 @@ MODEL_PRESETS = {
 DEFAULT_MODEL = "deepseek/deepseek-v3.2"
 PERMISSION_MODES = ("safe", "ask", "strict")
 DEFAULT_PERMISSION_MODE = "ask"
+GITHUB_REPO_URL = "git+https://github.com/ThunderBoltX7/ghost"
 
 
 def ensure_data_dir():
@@ -161,6 +163,49 @@ def get_api_config(cfg):
 # Console
 # ---------------------------------------------------------------------------
 console = Console()
+
+
+# ---------------------------------------------------------------------------
+# Auto-upgrader
+# ---------------------------------------------------------------------------
+def upgrade_ghost():
+    """Auto-upgrades Ghost CLI from GitHub using the active Python executable."""
+    console.print(f"\n[bold cyan]▲ Connecting to repository to upgrade Ghost...[/bold cyan]")
+    cmd = [
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "--upgrade",
+        "--no-cache-dir",
+        GITHUB_REPO_URL,
+    ]
+
+    status = console.status("[cyan]Running pip install --upgrade...[/cyan]", spinner="dots")
+    status.start()
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+    except subprocess.TimeoutExpired:
+        status.stop()
+        console.print("[red]Upgrade timed out after 180s. Check your internet connection.[/red]")
+        return
+    except KeyboardInterrupt:
+        status.stop()
+        console.print("\n[yellow]Upgrade interrupted by user.[/yellow]")
+        return
+    except Exception as e:
+        status.stop()
+        console.print(f"[red]Upgrade failed to execute:[/red] {e}")
+        return
+    finally:
+        status.stop()
+
+    if res.returncode == 0:
+        console.print("\n[bold green]✔ Ghost upgraded successfully![/bold green]")
+        console.print("[dim]Type /exit and run `ghost` again to use the new version.[/dim]\n")
+    else:
+        err_msg = res.stderr.strip() or res.stdout.strip()
+        console.print(f"\n[bold red]Upgrade failed (exit code {res.returncode}):[/bold red]\n{err_msg}\n")
 
 
 # ---------------------------------------------------------------------------
@@ -703,8 +748,7 @@ def prompt_confirm(description: str, risk: str) -> bool:
 
 
 def confirm_with_preview(description: str, risk: str, show_preview) -> bool:
-    """Like prompt_confirm, but prints the header first and then invokes
-    `show_preview()` before asking."""
+    """Prints preview first and then invokes confirmation prompt."""
     console.print(f"\n[bold]⚠ confirmation required[/bold] ({_risk_tag(risk)}) — {description}")
     if show_preview is not None:
         show_preview()
@@ -908,6 +952,7 @@ def print_help():
                     "[cyan]/rank[/cyan]               — show current rank only",
                     "[cyan]/model[/cyan]              — switch model menu, or use: [cyan]/model <id>[/cyan]",
                     "[cyan]/config[/cyan]             — reconfigure provider / API keys",
+                    "[cyan]/upgrade[/cyan]            — auto-upgrade Ghost CLI from GitHub",
                     "[cyan]/mode[/cyan]               — show or set permission mode: [cyan]/mode safe|ask|strict[/cyan]",
                     "",
                     "[cyan]/plan <task>[/cyan]        — analyze the project and draft a step-by-step plan (no edits)",
@@ -1470,6 +1515,10 @@ def handle_slash_command(user_input, messages):
         console.print("[dim]Ghost fades out.[/dim]")
         return "exit"
 
+    if low == "/upgrade":
+        upgrade_ghost()
+        return True
+
     if low == "/stats":
         render_stats(load_stats(), HOLDER.model_name, HOLDER.permission_mode, HOLDER.auto_test)
         return True
@@ -1677,7 +1726,6 @@ def run_agent():
         edited = []
         ok = run_turn(messages, TOOL_DEFINITIONS, edited=edited)
         if not ok:
-            # Cleanly pop the interrupted or failed turn so messages stay aligned
             del messages[pre_len:]
         else:
             maybe_autotest(messages, edited)
