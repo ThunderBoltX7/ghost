@@ -3,19 +3,43 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "ghost-ai-cli"  # Ensure this name is available on PyPI
-version = "0.1.0"
-description = "A terminal-based AI coding assistant."
+name = "ghost-ai-cli"
+version = "2.1.0"
+description = "An autonomous terminal AI pair-programmer with planning mode, self-healing test loops, and git workflows."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [
     { name = "Mayank Ojha" }
 ]
+keywords = [
+    "ai",
+    "cli",
+    "pair-programming",
+    "terminal",
+    "developer-tools",
+    "deepseek",
+]
+classifiers = [
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Code Generators",
+]
 dependencies = [
     "openai>=1.0.0",
-    "rich>=13.0.0"
+    "rich>=13.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/ThunderBoltX7/ghost"
+Repository = "https://github.com/ThunderBoltX7/ghost"
+Issues = "https://github.com/ThunderBoltX7/ghost/issues"
 
 [project.scripts]
 ghost = "ghost_cli.main:run_agent"
