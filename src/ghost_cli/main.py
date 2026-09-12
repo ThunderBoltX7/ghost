@@ -76,7 +76,6 @@ def save_config(cfg):
     except Exception:
         return False
 
-
 def interactive_setup(cfg):
     """Handles onboarding, provider selection, and permanent saving."""
     console.clear()
@@ -90,32 +89,47 @@ def interactive_setup(cfg):
 
     console.print("Select your API Provider:")
     console.print("[cyan]1.[/cyan] OpenRouter (Recommended)")
-    console.print("[cyan]2.[/cyan] OpenAI")
-    console.print("[cyan]3.[/cyan] Groq")
-    console.print("[cyan]4.[/cyan] DeepSeek")
-    console.print("[cyan]5.[/cyan] NVIDIA NIM")
-    console.print("[cyan]6.[/cyan] Custom (Any OpenAI-compatible endpoint)")
+    console.print("[cyan]2.[/cyan] OmniRoute Gateway")
+    console.print("[cyan]3.[/cyan] OpenAI")
+    console.print("[cyan]4.[/cyan] Groq")
+    console.print("[cyan]5.[/cyan] DeepSeek")
+    console.print("[cyan]6.[/cyan] NVIDIA NIM")
+    console.print("[cyan]7.[/cyan] Custom (Any OpenAI-compatible endpoint)")
 
-    choice = Prompt.ask("\n[bold white]Enter choice (1-6)[/bold white]", choices=["1", "2", "3", "4", "5", "6"], default="1")
+    choice = Prompt.ask("\n[bold white]Enter choice (1-7)[/bold white]", choices=["1", "2", "3", "4", "5", "6", "7"], default="1")
 
-    if choice == "6":
+    if choice == "2":
+        provider_name = "OmniRoute"
+        base_url = Prompt.ask(
+            "[bold white]Enter OmniRoute Base URL[/bold white]",
+            default="http://localhost:20128/v1",
+        ).strip().rstrip("/")
+        default_model = Prompt.ask(
+            "[bold white]Enter default model name[/bold white]",
+            default="auto",
+        ).strip()
+    elif choice == "7":
         provider_name = "Custom"
-        base_url = Prompt.ask("[bold white]Enter Base URL (e.g., http://localhost:11434/v1)[/bold white]").strip()
+        base_url = Prompt.ask("[bold white]Enter Base URL (e.g., http://localhost:11434/v1)[/bold white]").strip().rstrip("/")
         default_model = Prompt.ask("[bold white]Enter default model name[/bold white]", default="gpt-4").strip()
     else:
         providers = {
             "1": ("OpenRouter", "https://openrouter.ai/api/v1", "deepseek/deepseek-v3.2"),
-            "2": ("OpenAI", "https://api.openai.com/v1", "gpt-4o"),
-            "3": ("Groq", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile"),
-            "4": ("DeepSeek", "https://api.deepseek.com", "deepseek-chat"),
-            "5": ("NVIDIA", "https://integrate.api.nvidia.com/v1", "deepseek-ai/deepseek-v4-pro-0813"),
+            "3": ("OpenAI", "https://api.openai.com/v1", "gpt-4o"),
+            "4": ("Groq", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile"),
+            "5": ("DeepSeek", "https://api.deepseek.com", "deepseek-chat"),
+            "6": ("NVIDIA", "https://integrate.api.nvidia.com/v1", "deepseek-ai/deepseek-v4-pro-0813"),
         }
         provider_name, base_url, default_model = providers[choice]
 
     while True:
-        new_key = Prompt.ask(f"\n[bold white]Enter your {provider_name} API Key[/bold white]", password=True).strip()
+        new_key = Prompt.ask(
+            f"\n[bold white]Enter your {provider_name} API Key[/bold white]",
+            password=True,
+            default="omniroute-default" if choice == "2" else ...,
+        ).strip()
 
-        if len(new_key) > 5:
+        if len(new_key) >= 1:
             cfg["provider"] = provider_name
             cfg["base_url"] = base_url
             cfg["api_key"] = new_key
@@ -133,6 +147,16 @@ def interactive_setup(cfg):
 
 
 def get_api_config(cfg):
+    omni_key = os.environ.get("OMNIROUTE_API_KEY")
+    if omni_key and "api_key" not in cfg:
+        cfg["api_key"] = omni_key
+        cfg["base_url"] = os.environ.get("OMNIROUTE_BASE_URL", "http://localhost:20128/v1").rstrip("/")
+        cfg["model"] = os.environ.get("GHOST_MODEL", "auto")
+        cfg["provider"] = "OmniRoute"
+        cfg.setdefault("permission_mode", DEFAULT_PERMISSION_MODE)
+        cfg.setdefault("auto_test", False)
+        return cfg
+
     env_key = (
         os.environ.get("OPENROUTER_API_KEY")
         or os.environ.get("OPENAI_API_KEY")
