@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ghost-ai-cli"
-version = "2.1.0"
+version = "2.2.0"
 description = "An autonomous terminal AI pair-programmer with planning mode, self-healing test loops, and git workflows."
 readme = "README.md"
 requires-python = ">=3.9"
