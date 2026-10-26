@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ghost-ai-cli"
-version = "2.2.0"
-description = "An autonomous terminal AI pair-programmer with planning mode, self-healing test loops, and git workflows."
+version = "2.3.0"
+description = "An autonomous terminal AI coding agent with subagents, token-aware context compaction, shadow git checkpoints, plan-critique-execute loops, and multi-model routing."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
@@ -15,25 +15,49 @@ authors = [
 keywords = [
     "ai",
     "cli",
+    "coding-agent",
     "pair-programming",
     "terminal",
     "developer-tools",
+    "subagents",
+    "llm",
     "deepseek",
+    "openrouter",
 ]
 classifiers = [
+    "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Code Generators",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Utilities",
 ]
 dependencies = [
-    "openai>=1.0.0",
-    "rich>=13.0.0",
+    "openai>=1.30.0",
+    "rich>=13.7.0",
+    "tiktoken>=0.7.0",
+]
+
+[project.optional-dependencies]
+verify = [
+    "pytest>=8.0.0",
+    "ruff>=0.5.0",
+    "mypy>=1.10.0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.5.0",
+    "mypy>=1.10.0",
+    "build>=1.2.0",
+    "twine>=5.0.0",
 ]
 
 [project.urls]
@@ -46,3 +70,20 @@ ghost = "ghost_cli.main:run_agent"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ghost_cli"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.9"
+ignore_missing_imports = true
+check_untyped_defs = false
