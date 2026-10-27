@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ghost-ai-cli"
-version = "2.3.0"
+version = "2.5.0"
 description = "An autonomous terminal AI coding agent with subagents, token-aware context compaction, shadow git checkpoints, plan-critique-execute loops, and multi-model routing."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -44,6 +44,7 @@ dependencies = [
     "openai>=1.30.0",
     "rich>=13.7.0",
     "tiktoken>=0.7.0",
+    "prompt_toolkit>=3.0.0",
 ]
 
 [project.optional-dependencies]
@@ -73,6 +74,7 @@ packages = ["src/ghost_cli"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
 addopts = "-q"
 
 [tool.ruff]
