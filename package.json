@@ -1,0 +1,25 @@
+{
+  "name": "ghost-ai-cli-by-mayank",
+  "version": "0.1.2",
+  "description": "Ghost CLI — AI pair-programming agent for the terminal",
+  "bin": {
+    "ghost": "bin/ghost.js"
+  },
+  "scripts": {
+    "postinstall": "python -m pip install . || python3 -m pip install ."
+  },
+  "keywords": [
+    "ai",
+    "cli",
+    "terminal",
+    "assistant",
+    "agent"
+  ],
+  "license": "MIT",
+  "files": [
+    "bin/",
+    "src/",
+    "pyproject.toml",
+    "README.md"
+  ]
+}
