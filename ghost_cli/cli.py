@@ -364,7 +364,7 @@ def _build_toolbar():
             ("ansibrightblack", " 👻 ghost "),
             ("ansibrightcyan bold", f"{HOLDER.model_name} "),
             ("ansibrightblack", "│ "),
-            ("ansibrightwhite", f"mode:{mode} "),
+            ("ansiwhite bold", f"mode:{mode} "),
             ("ansibrightblack", "│ "),
             (ctx_color, f"ctx:{used:,}/{limit:,} ({pct:.0f}%) "),
             ("ansibrightblack", "│ "),
